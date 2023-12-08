@@ -33,7 +33,7 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:$logback_version")
     implementation("org.mongodb:mongodb-driver-kotlin-coroutine:$mongo_driver_version")
     testImplementation("io.ktor:ktor-server-tests-jvm")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version")
+    testImplementation("io.ktor:ktor-client-content-negotiation:$ktor_version")
     testImplementation ("io.kotest:kotest-runner-junit5:$kotest_version")
     testImplementation ("io.kotest:kotest-assertions-core:$kotest_version")
 }
