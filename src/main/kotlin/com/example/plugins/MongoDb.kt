@@ -3,8 +3,10 @@ package com.example.plugins
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
+import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.server.application.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.flow.filter
@@ -26,6 +28,14 @@ fun Application.configureMongoDb() {
             val jedi = collection.find().toList()
             call.respond(OK, jedi.map { it.toModel() })
         }
+        post("/mongo/jedi") {
+            val jedi = call.receive<Jedi>()
+            val id = collection.insertOne(jedi.toEntity()).insertedId
+
+            call.response.header("Location", "/mongo/jedi/$id")
+            call.respond(Created)
+        }
+
     }
 }
 
@@ -45,11 +55,19 @@ data class JediEntity(
     val age: Int
 )
 
-private fun JediEntity.toModel() = Jedi(
-    id = id?.toHexString(),
-    name = name,
-    age = age
-)
+private fun JediEntity.toModel() =
+    Jedi(
+        id = id?.toHexString(),
+        name = name,
+        age = age
+    )
+
+private fun Jedi.toEntity(): JediEntity =
+    JediEntity(
+        id = id?.let(::ObjectId),
+        name = name,
+        age = age
+    )
 
 fun MongoDatabase.lazyGetCollection(collectionName: String): MongoCollection<JediEntity> {
     runBlocking {
