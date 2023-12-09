@@ -1,5 +1,6 @@
 package com.example.plugins
 
+import com.mongodb.client.model.Filters.eq
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
@@ -33,9 +34,15 @@ fun Application.configureMongoDb() {
             val id = collection.insertOne(jedi.toEntity()).insertedId
 
             call.response.header("Location", "/mongo/jedi/$id")
-            call.respond(Created)
+            call.respond(
+                Created,
+                collection.find(
+                    eq("_id", id)
+                ).firstOrNull()
+                    ?.toModel()
+                    ?: throw Exception("Inserted id not found")
+            )
         }
-
     }
 }
 

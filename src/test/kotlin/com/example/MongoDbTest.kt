@@ -39,11 +39,14 @@ class MongoDbTest : FunSpec({
             .apply {
                 status shouldBe Created
                 headers["Location"] shouldHaveLength 56
+                body<Jedi>().nullId() shouldBe Jedi(name = "Yoda", age = 534)
             }
     }
 })
 
-private fun List<Jedi>.nullIds(): List<Jedi> = map { it.copy(id = null) }
+private fun List<Jedi>.nullIds(): List<Jedi> = map { it.nullId() }
+
+private fun Jedi.nullId() = copy(id = null)
 
 private fun FunSpec.appTest(
     name: String,
