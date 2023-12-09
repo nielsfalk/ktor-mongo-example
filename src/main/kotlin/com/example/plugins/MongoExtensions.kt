@@ -2,7 +2,7 @@ package com.example.plugins
 
 import com.mongodb.client.model.Filters.and
 import com.mongodb.client.model.Filters.eq
-import com.mongodb.client.model.Updates.set
+import com.mongodb.client.model.Updates
 import com.mongodb.client.result.UpdateResult
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
@@ -13,7 +13,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.bson.BsonDocument
-import org.bson.codecs.kotlinx.defaultSerializersModule
 import org.bson.types.ObjectId
 
 inline fun <reified T : Any> MongoDatabase.lazyGetCollection(collectionName: String): MongoCollection<T> {
@@ -25,28 +24,28 @@ inline fun <reified T : Any> MongoDatabase.lazyGetCollection(collectionName: Str
     return getCollection<T>(collectionName)
 }
 
-@OptIn(ExperimentalSerializationApi::class)
-val json = Json { serializersModule = defaultSerializersModule }
-
-
 suspend fun <T : Any> MongoCollection<T>.findById(id: ObjectId) =
     find(eq("_id", id)).firstOrNull()
 
+@OptIn(ExperimentalSerializationApi::class)
+val bsonAwareJson = Json { serializersModule = org.bson.codecs.kotlinx.defaultSerializersModule }
+
 suspend inline fun <reified T : Any> MongoCollection<T>.updateOne(
     id: ObjectId,
-    update: T,
-    json: Json = com.example.plugins.json
+    entity: T,
+    json: Json = bsonAwareJson
 ): UpdateResult {
-    val bsonUpdate = BsonDocument.parse(json.encodeToString<T>(update))
+    val bsonUpdates = BsonDocument.parse(json.encodeToString<T>(entity))
         .filterKeys { it != "_id" }
-        .map { (key, value) -> set(key, value) }
-    return T::class.members.firstOrNull { it.name == "version" }
-        ?.let {
-            val version = it.call(update) as Long
-            updateOne(
-                and(eq("_id", id), eq("version", version)),
-                bsonUpdate + set("version", version + 1)
-            )
-        }
-        ?: updateOne(eq("_id", id), bsonUpdate)
+        .map { (key, value) -> Updates.set(key, value) }
+    val versionProperty = T::class.members.firstOrNull { it.name == "version" }
+    return if (versionProperty == null)
+        updateOne(eq("_id", id), bsonUpdates)
+    else {
+        val version: Long = versionProperty.call(entity) as Long
+        updateOne(
+            and(eq("_id", id), eq("version", version)),
+            bsonUpdates + Updates.set("version", version + 1)
+        )
+    }
 }

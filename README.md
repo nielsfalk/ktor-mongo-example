@@ -50,23 +50,28 @@ fun Application.configureMongoDb(
 I also extended the MongoCollection so Entity-Models can be updated with optimistic locking
 
 ```kotlin
+@OptIn(ExperimentalSerializationApi::class)
+val bsonAwareJson = Json { serializersModule = org.bson.codecs.kotlinx.defaultSerializersModule }
+
 suspend inline fun <reified T : Any> MongoCollection<T>.updateOne(
     id: ObjectId,
-    update: T,
-    json: Json = com.example.plugins.json
+    entity: T,
+    json: Json = Json {
+        serializersModule = bsonAwareJson
 ): UpdateResult {
-    val bsonUpdate = BsonDocument.parse(json.encodeToString<T>(update))
+    val bsonUpdates = BsonDocument.parse(json.encodeToString<T>(entity))
         .filterKeys { it != "_id" }
-        .map { (key, value) -> set(key, value) }
-    return T::class.members.firstOrNull { it.name == "version" }
-        ?.let {
-            val version = it.call(update) as Long
-            updateOne(
-                and(eq("_id", id), eq("version", version)),
-                bsonUpdate + set("version", version + 1)
-            )
-        }
-        ?: updateOne(eq("_id", id), bsonUpdate)
+        .map { (key, value) -> Updates.set(key, value) }
+    val versionProperty = T::class.members.firstOrNull { it.name == "version" }
+    return if (versionProperty == null)
+        updateOne(eq("_id", id), bsonUpdates)
+    else {
+        val version: Long = versionProperty.call(entity) as Long
+        updateOne(
+            and(eq("_id", id), eq("version", version)),
+            bsonUpdates + Updates.set("version", version + 1)
+        )
+    }
 }
 ```
 
