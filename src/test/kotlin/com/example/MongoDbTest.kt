@@ -5,8 +5,9 @@ import com.example.plugins.configureMongoDb
 import com.example.plugins.configureSerialization
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldHaveLength
+import io.kotest.matchers.string.shouldStartWith
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
@@ -38,14 +39,44 @@ class MongoDbTest : FunSpec({
 
             .apply {
                 status shouldBe Created
-                headers["Location"] shouldHaveLength 56
+                headers["Location"] shouldStartWith "/mongo/jedi/"
                 body<Jedi>().nullId() shouldBe Jedi(name = "Yoda", age = 534)
             }
     }
+
+    appTest("GET") { client ->
+        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+        client.get("/mongo/jedi/$id").apply {
+
+            status shouldBe OK
+            body<Jedi>().nullId() shouldBeEqual Jedi(name = "Yoda", age = 534)
+        }
+    }
+
+    appTest("PUT") { client ->
+        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+        client.put("/mongo/jedi/$id") {
+            setBody(Jedi(name = "Yoda", age = 1534))
+            contentType(Json)
+        }.apply {
+
+            status shouldBe OK
+            body<Jedi>().nullId() shouldBeEqual Jedi(name = "Yoda", age = 1534)
+        }
+    }
 })
 
-private fun List<Jedi>.nullIds(): List<Jedi> = map { it.nullId() }
 
+private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
+    val s = client.post("/mongo/jedi") {
+        setBody(jedi)
+        contentType(Json)
+    }.headers["Location"]!!
+    return s
+        .substring(12)
+}
+
+private fun List<Jedi>.nullIds(): List<Jedi> = map { it.nullId() }
 private fun Jedi.nullId() = copy(id = null)
 
 private fun FunSpec.appTest(
