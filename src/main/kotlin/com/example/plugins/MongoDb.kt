@@ -20,53 +20,41 @@ import kotlinx.serialization.Serializable
 import org.bson.types.ObjectId
 
 fun Application.configureMongoDb(
-    database: MongoDatabase = MongoClient.create().getDatabase("test")
+    database: MongoDatabase = MongoClient.create().getDatabase("test"),
+    collection: MongoCollection<JediEntity> = database.lazyGetCollection<JediEntity>("jedi")
 ) {
-    val collection: MongoCollection<JediEntity> = database.lazyGetCollection<JediEntity>("jedi")
-
     routing {
-        get("/mongo/jedi") {
-            val jedi = collection.find().toList()
-            call.respond(OK, jedi.map { it.toModel() })
-        }
+        get("/mongo/jedi") { call.respond(OK, collection.find().toList().toModel()) }
         post("/mongo/jedi") {
-            val jedi = call.receive<Jedi>()
-            val id = collection.insertOne(jedi.toEntity()).insertedId!!
-
-            call.response.header("Location", "/mongo/jedi/${id.asObjectId().value}")
-            collection.findById(id.asObjectId().value)
-                ?.let { call.respond(Created, it.toModel()) }
-        }
-        get("/mongo/jedi/{id}") {
-            collection.findById()?.let {
-                call.respond(OK, it.toModel())
+            val insertResult = collection.insertOne(call.receive<Jedi>().toEntity())
+            val id = insertResult.insertedId!!.asObjectId().value
+            collection.findById(id)?.let {
+                call.response.header("Location", "/mongo/jedi/$id")
+                call.respond(Created, it.toModel())
             }
         }
+        get("/mongo/jedi/{id}") { collection.findById()?.let { call.respond(OK, it.toModel()) } }
         put("/mongo/jedi/{id}") {
-            collection.findById()
-                ?.let { found ->
-                    val updateResult = collection.updateOne(
-                        found.id!!,
-                        call.receive<Jedi>().toEntity()
+            collection.findById()?.let { found ->
+                val updateResult = collection.updateOne(found.id!!, call.receive<Jedi>().toEntity())
+                if (updateResult.modifiedCount == 0L) {
+                    call.respond(BadRequest, "${found.id} was not updated. Maybe the version is outdated")
+                } else
+                    call.respond(
+                        OK,
+                        collection.findById(found.id)
+                            ?.toModel()
+                            ?: throw Exception("Id not found")
                     )
-                    if (updateResult.modifiedCount == 0L) {
-                        call.respond(BadRequest, "${found.id} was not updated. Maybe the version was outdated")
-                    } else
-                        call.respond(
-                            OK,
-                            collection.findById(found.id)
-                                ?.toModel()
-                                ?: throw Exception("Id not found")
-                        )
-                }
+            }
         }
         delete("/mongo/jedi/{id}") {
             collection.findById()?.let { found ->
-                collection.deleteOne(eq("_id", found.id))
+                val deleteResult = collection.deleteOne(eq("_id", found.id))
+                if (deleteResult.deletedCount == 0L) throw Exception("Id not found")
                 call.respond(NoContent)
             }
         }
-
     }
 }
 
@@ -102,6 +90,8 @@ private fun JediEntity.toModel() =
         name = name,
         age = age
     )
+
+private fun List<JediEntity>.toModel(): List<Jedi> = map { it.toModel() }
 
 private fun Jedi.toEntity(): JediEntity =
     JediEntity(

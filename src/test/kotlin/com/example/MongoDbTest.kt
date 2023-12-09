@@ -32,10 +32,9 @@ import kotlin.random.Random
 import kotlin.random.nextUInt
 
 
-@Suppress("unused")
 class MongoDbTest : AppFunSpec({
     test("GET list") {
-        val id = client().insertTestJedi(Jedi(name = "Luke", age = 19))
+        val id = insertTestJedi(Jedi(name = "Luke", age = 19))
 
         client().get("/mongo/jedi").apply {
 
@@ -58,7 +57,7 @@ class MongoDbTest : AppFunSpec({
     }
 
     test("GET") {
-        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
+        val id = insertTestJedi(Jedi(name = "Yoda", age = 534))
 
         client().get("/mongo/jedi/$id").apply {
 
@@ -75,10 +74,10 @@ class MongoDbTest : AppFunSpec({
     }
 
     test("PUT") {
-        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
+        val id = insertTestJedi(Jedi(name = "Yoda", age = 534))
 
         client().put("/mongo/jedi/$id") {
-            setBody(Jedi(name = "Yoda", age = 1534))
+            setBody(Jedi(name = "Yoda", age = 1534, version = 0))
             contentType(Json)
         }.apply {
 
@@ -88,7 +87,7 @@ class MongoDbTest : AppFunSpec({
     }
 
     test("PUT with wrong version") {
-        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
+        val id = insertTestJedi(Jedi(name = "Yoda", age = 534))
 
         client().put("/mongo/jedi/$id") {
             setBody(Jedi(name = "Yoda", age = 1534, version = 999))
@@ -96,12 +95,12 @@ class MongoDbTest : AppFunSpec({
         }.apply {
 
             status shouldBe BadRequest
-            bodyAsText() shouldBeEqual "${id} was not updated. Maybe the version was outdated"
+            bodyAsText() shouldBeEqual "$id was not updated. Maybe the version is outdated"
         }
     }
 
     test("DELETE") {
-        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
+        val id = insertTestJedi(Jedi(name = "Yoda", age = 534))
         client().delete("/mongo/jedi/$id").apply {
 
             status shouldBe NoContent
@@ -112,16 +111,16 @@ class MongoDbTest : AppFunSpec({
 
 private fun HttpResponse.createdIdFromLocationHeader() = headers["Location"]!!.removePrefix("/mongo/jedi/")
 
-private suspend fun HttpClient.insertTestJedi(jedi: Jedi) =
-    post("/mongo/jedi") {
-        setBody(jedi)
-        contentType(Json)
-    }.headers["Location"]!!.substring(12)
+private suspend fun AppFunSpec.insertTestJedi(jedi: Jedi) =
+    client().post("/mongo/jedi") {
+        this.setBody(jedi)
+        this.contentType(Json)
+    }.headers["Location"]!!.removePrefix("/mongo/jedi/")
 
 abstract class AppFunSpec(
     body: AppFunSpec.() -> Unit = {},
     databaseName: String = "test${Random.nextUInt()}",
-    val database: MongoDatabase = MongoClient.create().getDatabase(databaseName)
+    private val database: MongoDatabase = MongoClient.create().getDatabase(databaseName)
 ) : FunSpec() {
     private lateinit var clientFactory: (HttpClientConfig<out HttpClientEngineConfig>.() -> Unit) -> HttpClient
 
