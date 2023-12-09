@@ -25,11 +25,12 @@ inline fun <reified T : Any> MongoDatabase.lazyGetCollection(collectionName: Str
     return getCollection<T>(collectionName)
 }
 
-suspend fun <T : Any> MongoCollection<T>.findById(id: ObjectId) =
-    find(eq("_id", id)).firstOrNull()
-
 @OptIn(ExperimentalSerializationApi::class)
 val json = Json { serializersModule = defaultSerializersModule }
+
+
+suspend fun <T : Any> MongoCollection<T>.findById(id: ObjectId) =
+    find(eq("_id", id)).firstOrNull()
 
 suspend inline fun <reified T : Any> MongoCollection<T>.updateOne(
     id: ObjectId,

@@ -2,6 +2,7 @@ package com.example.plugins
 
 import com.mongodb.client.model.Filters.eq
 import com.mongodb.kotlin.client.coroutine.MongoClient
+import com.mongodb.kotlin.client.coroutine.MongoCollection
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.NoContent
@@ -21,11 +22,6 @@ fun Application.configureMongoDb() {
     val mongoClient = MongoClient.create()
     val database = mongoClient.getDatabase("test")
     val collection = database.lazyGetCollection<JediEntity>("jedi")
-    suspend fun PipelineContext<Unit, ApplicationCall>.findJediById(
-        id: ObjectId = call.parameters["id"]
-            ?.let { if (ObjectId.isValid(it)) ObjectId(it) else null }
-            ?: throw IllegalArgumentException("Invalid ID")
-    ) = collection.findById(id)
 
     routing {
         get("/mongo/jedi") {
@@ -39,35 +35,36 @@ fun Application.configureMongoDb() {
             call.response.header("Location", "/mongo/jedi/${id.asObjectId().value}")
             call.respond(
                 Created,
-                findJediById(id.asObjectId().value)
+                collection.findById(id.asObjectId().value)
                     ?.toModel()
                     ?: throw Exception("Inserted id not found")
             )
         }
         get("/mongo/jedi/{id}") {
-            findJediById()?.let {
+            collection.findById()?.let {
                 call.respond(OK, it.toModel())
             }
         }
         put("/mongo/jedi/{id}") {
-            findJediById()?.let { found ->
-                val updateResult = collection.updateOne(
-                    found.id!!,
-                    call.receive<Jedi>().toEntity()
-                )
-                if (updateResult.modifiedCount == 0L) {
-                    call.respond(BadRequest, "${found.id} was not updated. Maybe the version was outdated")
-                } else
-                    call.respond(
-                        OK,
-                        findJediById(found.id)
-                            ?.toModel()
-                            ?: throw Exception("Id not found")
+            collection.findById()
+                ?.let { found ->
+                    val updateResult = collection.updateOne(
+                        found.id!!,
+                        call.receive<Jedi>().toEntity()
                     )
-            }
+                    if (updateResult.modifiedCount == 0L) {
+                        call.respond(BadRequest, "${found.id} was not updated. Maybe the version was outdated")
+                    } else
+                        call.respond(
+                            OK,
+                            collection.findById(found.id)
+                                ?.toModel()
+                                ?: throw Exception("Id not found")
+                        )
+                }
         }
         delete("/mongo/jedi/{id}") {
-            findJediById()?.let { found ->
+            collection.findById()?.let { found ->
                 collection.deleteOne(eq("_id", found.id))
                 call.respond(NoContent)
             }
@@ -75,6 +72,13 @@ fun Application.configureMongoDb() {
 
     }
 }
+
+context (PipelineContext<Unit, ApplicationCall>)
+suspend fun <T : Any> MongoCollection<T>.findById() =
+    findById(call.parameters["id"]
+        ?.let { if (ObjectId.isValid(it)) ObjectId(it) else null }
+        ?: throw IllegalArgumentException("Invalid ID"))
+
 
 @Serializable
 data class Jedi(
