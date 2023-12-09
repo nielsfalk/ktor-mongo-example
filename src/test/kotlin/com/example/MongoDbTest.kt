@@ -60,6 +60,13 @@ class MongoDbTest : FunSpec({
         }
     }
 
+    appTest("GET with invalid id") { client ->
+        client.get("/mongo/jedi/invalid").apply {
+
+            status shouldBe NotFound
+        }
+    }
+
     appTest("PUT") { client ->
         val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
 

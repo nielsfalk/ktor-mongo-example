@@ -33,12 +33,8 @@ fun Application.configureMongoDb() {
             val id = collection.insertOne(jedi.toEntity()).insertedId!!
 
             call.response.header("Location", "/mongo/jedi/${id.asObjectId().value}")
-            call.respond(
-                Created,
-                collection.findById(id.asObjectId().value)
-                    ?.toModel()
-                    ?: throw Exception("Inserted id not found")
-            )
+            collection.findById(id.asObjectId().value)
+                ?.let { call.respond(Created, it.toModel()) }
         }
         get("/mongo/jedi/{id}") {
             collection.findById()?.let {
@@ -75,9 +71,9 @@ fun Application.configureMongoDb() {
 
 context (PipelineContext<Unit, ApplicationCall>)
 suspend fun <T : Any> MongoCollection<T>.findById() =
-    findById(call.parameters["id"]
+    call.parameters["id"]
         ?.let { if (ObjectId.isValid(it)) ObjectId(it) else null }
-        ?: throw IllegalArgumentException("Invalid ID"))
+        ?.let { findById(it) }
 
 
 @Serializable
