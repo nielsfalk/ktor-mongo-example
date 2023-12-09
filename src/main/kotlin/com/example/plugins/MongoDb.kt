@@ -6,6 +6,7 @@ import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
 import com.mongodb.kotlin.client.coroutine.MongoDatabase
 import io.ktor.http.HttpStatusCode.Companion.Created
+import io.ktor.http.HttpStatusCode.Companion.NoContent
 import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -76,6 +77,13 @@ fun Application.configureMongoDb() {
                 )
             }
         }
+        delete("/mongo/jedi/{id}") {
+            findJediById()?.let { found ->
+                collection.deleteOne(eq("_id", found.id))
+                call.respond(NoContent)
+            }
+        }
+
     }
 }
 

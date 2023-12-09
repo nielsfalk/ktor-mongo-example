@@ -15,6 +15,8 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.http.ContentType.Application.Json
 import io.ktor.http.HttpStatusCode.Companion.Created
+import io.ktor.http.HttpStatusCode.Companion.NoContent
+import io.ktor.http.HttpStatusCode.Companion.NotFound
 import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.testing.*
@@ -62,6 +64,15 @@ class MongoDbTest : FunSpec({
 
             status shouldBe OK
             body<Jedi>().nullId() shouldBeEqual Jedi(name = "Yoda", age = 1534)
+        }
+    }
+
+    appTest("DELETE") { client ->
+        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+        client.delete("/mongo/jedi/$id").apply {
+
+            status shouldBe NoContent
+            client.get("/mongo/jedi/$id").status shouldBe NotFound
         }
     }
 })
