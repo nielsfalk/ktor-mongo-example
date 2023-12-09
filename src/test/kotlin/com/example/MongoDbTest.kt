@@ -12,8 +12,10 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.http.ContentType.Application.Json
+import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.NoContent
 import io.ktor.http.HttpStatusCode.Companion.NotFound
@@ -26,10 +28,12 @@ import kotlinx.serialization.json.Json
 @Suppress("unused")
 class MongoDbTest : FunSpec({
     appTest("GET list") { client ->
+        val id = insertTestJedi(client, Jedi(name = "Luke", age = 19))
+
         client.get("/mongo/jedi").apply {
 
             status shouldBe OK
-            body<List<Jedi>>().nullIds() shouldContain Jedi(name = "Luke", age = 19)
+            body<List<Jedi>>() shouldContain Jedi(id = id, name = "Luke", age = 19)
         }
     }
 
@@ -42,28 +46,43 @@ class MongoDbTest : FunSpec({
             .apply {
                 status shouldBe Created
                 headers["Location"] shouldStartWith "/mongo/jedi/"
-                body<Jedi>().nullId() shouldBe Jedi(name = "Yoda", age = 534)
+                body<Jedi>() shouldBe Jedi(id = createdIdFromLocationHeader(), name = "Yoda", age = 534)
             }
     }
 
     appTest("GET") { client ->
         val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+
         client.get("/mongo/jedi/$id").apply {
 
             status shouldBe OK
-            body<Jedi>().nullId() shouldBeEqual Jedi(name = "Yoda", age = 534)
+            body<Jedi>() shouldBeEqual Jedi(id = id, name = "Yoda", age = 534)
         }
     }
 
     appTest("PUT") { client ->
         val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+
         client.put("/mongo/jedi/$id") {
             setBody(Jedi(name = "Yoda", age = 1534))
             contentType(Json)
         }.apply {
 
             status shouldBe OK
-            body<Jedi>().nullId() shouldBeEqual Jedi(name = "Yoda", age = 1534)
+            body<Jedi>() shouldBeEqual Jedi(id = id, name = "Yoda", age = 1534, version = 1)
+        }
+    }
+
+    appTest("PUT with wrong version") { client ->
+        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+
+        client.put("/mongo/jedi/$id") {
+            setBody(Jedi(name = "Yoda", age = 1534, version = 999))
+            contentType(Json)
+        }.apply {
+
+            status shouldBe BadRequest
+            bodyAsText() shouldBeEqual "${id} was not updated. Maybe the version was outdated"
         }
     }
 
@@ -77,6 +96,8 @@ class MongoDbTest : FunSpec({
     }
 })
 
+private fun HttpResponse.createdIdFromLocationHeader() = headers["Location"]!!.removePrefix("/mongo/jedi/")
+
 
 private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
     val s = client.post("/mongo/jedi") {
@@ -86,9 +107,6 @@ private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
     return s
         .substring(12)
 }
-
-private fun List<Jedi>.nullIds(): List<Jedi> = map { it.nullId() }
-private fun Jedi.nullId() = copy(id = null)
 
 private fun FunSpec.appTest(
     name: String,

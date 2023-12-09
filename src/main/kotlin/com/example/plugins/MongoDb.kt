@@ -2,6 +2,7 @@ package com.example.plugins
 
 import com.mongodb.client.model.Filters.eq
 import com.mongodb.kotlin.client.coroutine.MongoClient
+import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.NoContent
 import io.ktor.http.HttpStatusCode.Companion.OK
@@ -24,7 +25,7 @@ fun Application.configureMongoDb() {
         id: ObjectId = call.parameters["id"]
             ?.let { if (ObjectId.isValid(it)) ObjectId(it) else null }
             ?: throw IllegalArgumentException("Invalid ID")
-    ) = collection.findJediById(id)
+    ) = collection.findById(id)
 
     routing {
         get("/mongo/jedi") {
@@ -50,16 +51,19 @@ fun Application.configureMongoDb() {
         }
         put("/mongo/jedi/{id}") {
             findJediById()?.let { found ->
-                collection.updateOne(
+                val updateResult = collection.updateOne(
                     found.id!!,
                     call.receive<Jedi>().toEntity()
                 )
-                call.respond(
-                    OK,
-                    findJediById(found.id)
-                        ?.toModel()
-                        ?: throw Exception("Id not found")
-                )
+                if (updateResult.modifiedCount == 0L) {
+                    call.respond(BadRequest, "${found.id} was not updated. Maybe the version was outdated")
+                } else
+                    call.respond(
+                        OK,
+                        findJediById(found.id)
+                            ?.toModel()
+                            ?: throw Exception("Id not found")
+                    )
             }
         }
         delete("/mongo/jedi/{id}") {
@@ -75,6 +79,7 @@ fun Application.configureMongoDb() {
 @Serializable
 data class Jedi(
     val id: String? = null,
+    val version: Long = 0,
     val name: String,
     val age: Int
 )
@@ -84,6 +89,7 @@ data class JediEntity(
     @SerialName("_id")
     @Contextual
     val id: ObjectId? = null,
+    val version: Long,
     val name: String,
     val age: Int
 )
@@ -91,6 +97,7 @@ data class JediEntity(
 private fun JediEntity.toModel() =
     Jedi(
         id = id?.toHexString(),
+        version = version,
         name = name,
         age = age
     )
@@ -98,6 +105,7 @@ private fun JediEntity.toModel() =
 private fun Jedi.toEntity(): JediEntity =
     JediEntity(
         id = id?.let(::ObjectId),
+        version = version,
         name = name,
         age = age
     )

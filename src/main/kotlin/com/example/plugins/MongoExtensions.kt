@@ -1,5 +1,6 @@
 package com.example.plugins
 
+import com.mongodb.client.model.Filters.and
 import com.mongodb.client.model.Filters.eq
 import com.mongodb.client.model.Updates
 import com.mongodb.client.result.UpdateResult
@@ -24,7 +25,7 @@ inline fun <reified T : Any> MongoDatabase.lazyGetCollection(collectionName: Str
     return getCollection<T>(collectionName)
 }
 
-suspend fun <T : Any> MongoCollection<T>.findJediById(id: ObjectId) =
+suspend fun <T : Any> MongoCollection<T>.findById(id: ObjectId) =
     find(eq("_id", id)).firstOrNull()
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -34,10 +35,24 @@ suspend inline fun <reified T : Any> MongoCollection<T>.updateOne(
     id: ObjectId,
     update: T,
     json: Json = com.example.plugins.json
-): UpdateResult =
-    updateOne(
-        eq("_id", id),
-        BsonDocument.parse(json.encodeToString(update))
-            .filterKeys { it != "_id" }
-            .map { (key, value) -> Updates.set(key, value) }
-    )
+): UpdateResult {
+    val encodeToString = json.encodeToString(update)
+    val bsonUpdate = BsonDocument.parse(encodeToString)
+        .filterKeys { it != "_id" }
+    val hasVersion = T::class.members.firstOrNull { it.name == "version" }
+    return if (hasVersion != null) {
+        val version = bsonUpdate["version"]!!.asNumber().longValue()
+        updateOne(
+            and(
+                eq("_id", id),
+                eq("version", version)
+            ),
+            bsonUpdate.map { (key, value) -> Updates.set(key, value) }
+                    + Updates.set("version", version + 1)
+        )
+    } else
+        updateOne(
+            eq("_id", id),
+            bsonUpdate.map { (key, value) -> Updates.set(key, value) }
+        )
+}
