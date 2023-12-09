@@ -38,6 +38,12 @@ dependencies {
     testImplementation("io.ktor:ktor-client-content-negotiation:$ktor_version")
     testImplementation("io.kotest:kotest-runner-junit5:$kotest_version")
     testImplementation("io.kotest:kotest-assertions-core:$kotest_version")
+
+    constraints {
+        implementation("commons-codec:commons-codec:1.13") {
+            because("version 1.11 is vulnerable")
+        }
+    }
 }
 
 tasks.withType<Test>().configureEach {
