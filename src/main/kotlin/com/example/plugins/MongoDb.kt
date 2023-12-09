@@ -3,6 +3,7 @@ package com.example.plugins
 import com.mongodb.client.model.Filters.eq
 import com.mongodb.kotlin.client.coroutine.MongoClient
 import com.mongodb.kotlin.client.coroutine.MongoCollection
+import com.mongodb.kotlin.client.coroutine.MongoDatabase
 import io.ktor.http.HttpStatusCode.Companion.BadRequest
 import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.NoContent
@@ -18,10 +19,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.bson.types.ObjectId
 
-fun Application.configureMongoDb() {
-    val mongoClient = MongoClient.create()
-    val database = mongoClient.getDatabase("test")
-    val collection = database.lazyGetCollection<JediEntity>("jedi")
+fun Application.configureMongoDb(
+    database: MongoDatabase = MongoClient.create().getDatabase("test")
+) {
+    val collection: MongoCollection<JediEntity> = database.lazyGetCollection<JediEntity>("jedi")
 
     routing {
         get("/mongo/jedi") {

@@ -3,7 +3,10 @@ package com.example
 import com.example.plugins.Jedi
 import com.example.plugins.configureMongoDb
 import com.example.plugins.configureSerialization
-import io.kotest.core.spec.style.FunSpec
+import com.mongodb.kotlin.client.coroutine.MongoClient
+import io.kotest.common.runBlocking
+import io.kotest.core.spec.DslDrivenSpec
+import io.kotest.core.spec.style.scopes.FunSpecRootScope
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.shouldBe
@@ -23,10 +26,12 @@ import io.ktor.http.HttpStatusCode.Companion.OK
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.testing.*
 import kotlinx.serialization.json.Json
+import kotlin.random.Random
+import kotlin.random.nextUInt
 
 
 @Suppress("unused")
-class MongoDbTest : FunSpec({
+class MongoDbTest : DbFunSpec({
     appTest("GET list") { client ->
         val id = insertTestJedi(client, Jedi(name = "Luke", age = 19))
 
@@ -105,7 +110,6 @@ class MongoDbTest : FunSpec({
 
 private fun HttpResponse.createdIdFromLocationHeader() = headers["Location"]!!.removePrefix("/mongo/jedi/")
 
-
 private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
     val s = client.post("/mongo/jedi") {
         setBody(jedi)
@@ -115,25 +119,35 @@ private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
         .substring(12)
 }
 
-private fun FunSpec.appTest(
-    name: String,
-    block: suspend ApplicationTestBuilder.(HttpClient) -> Unit
-) {
-    test(name) {
-        testApplication {
-            application {
-                configureSerialization()
-                configureMongoDb()
-            }
-            val client = createClient {
-                install(ContentNegotiation) {
-                    json(Json {
-                        prettyPrint = true
-                    })
-                }
-            }
+abstract class DbFunSpec(
+    body: DbFunSpec.() -> Unit = {},
+    databaseName: String = "test${Random.nextUInt()}"
+) : DslDrivenSpec(), FunSpecRootScope {
+    init {
+        afterProject {
+            runBlocking { database.drop() }
+        }
+        body()
+    }
 
-            block(client)
+    private val database = MongoClient.create().getDatabase(databaseName)
+
+    fun appTest(name: String, block: suspend ApplicationTestBuilder.(HttpClient) -> Unit) {
+        test(name) {
+            testApplication {
+                application {
+                    configureSerialization()
+                    configureMongoDb(database)
+                }
+                val client = createClient {
+                    install(ContentNegotiation) {
+                        json(Json {
+                            prettyPrint = true
+                        })
+                    }
+                }
+                block(client)
+            }
         }
     }
 }
