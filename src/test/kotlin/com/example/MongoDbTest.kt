@@ -4,15 +4,17 @@ import com.example.plugins.Jedi
 import com.example.plugins.configureMongoDb
 import com.example.plugins.configureSerialization
 import com.mongodb.kotlin.client.coroutine.MongoClient
+import com.mongodb.kotlin.client.coroutine.MongoDatabase
 import io.kotest.common.runBlocking
-import io.kotest.core.spec.DslDrivenSpec
-import io.kotest.core.spec.style.scopes.FunSpecRootScope
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.core.test.TestScope
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.equals.shouldBeEqual
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.engine.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -31,19 +33,19 @@ import kotlin.random.nextUInt
 
 
 @Suppress("unused")
-class MongoDbTest : DbFunSpec({
-    appTest("GET list") { client ->
-        val id = insertTestJedi(client, Jedi(name = "Luke", age = 19))
+class MongoDbTest : AppFunSpec({
+    test("GET list") {
+        val id = client().insertTestJedi(Jedi(name = "Luke", age = 19))
 
-        client.get("/mongo/jedi").apply {
+        client().get("/mongo/jedi").apply {
 
             status shouldBe OK
             body<List<Jedi>>() shouldContain Jedi(id = id, name = "Luke", age = 19)
         }
     }
 
-    appTest("POST") { client ->
-        client.post("/mongo/jedi") {
+    test("POST") {
+        client().post("/mongo/jedi") {
             setBody(Jedi(name = "Yoda", age = 534))
             contentType(Json)
         }
@@ -55,27 +57,27 @@ class MongoDbTest : DbFunSpec({
             }
     }
 
-    appTest("GET") { client ->
-        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+    test("GET") {
+        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
 
-        client.get("/mongo/jedi/$id").apply {
+        client().get("/mongo/jedi/$id").apply {
 
             status shouldBe OK
             body<Jedi>() shouldBeEqual Jedi(id = id, name = "Yoda", age = 534)
         }
     }
 
-    appTest("GET with invalid id") { client ->
-        client.get("/mongo/jedi/invalid").apply {
+    test("GET with invalid id") {
+        client().get("/mongo/jedi/invalid").apply {
 
             status shouldBe NotFound
         }
     }
 
-    appTest("PUT") { client ->
-        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+    test("PUT") {
+        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
 
-        client.put("/mongo/jedi/$id") {
+        client().put("/mongo/jedi/$id") {
             setBody(Jedi(name = "Yoda", age = 1534))
             contentType(Json)
         }.apply {
@@ -85,10 +87,10 @@ class MongoDbTest : DbFunSpec({
         }
     }
 
-    appTest("PUT with wrong version") { client ->
-        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
+    test("PUT with wrong version") {
+        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
 
-        client.put("/mongo/jedi/$id") {
+        client().put("/mongo/jedi/$id") {
             setBody(Jedi(name = "Yoda", age = 1534, version = 999))
             contentType(Json)
         }.apply {
@@ -98,55 +100,59 @@ class MongoDbTest : DbFunSpec({
         }
     }
 
-    appTest("DELETE") { client ->
-        val id = insertTestJedi(client, Jedi(name = "Yoda", age = 534))
-        client.delete("/mongo/jedi/$id").apply {
+    test("DELETE") {
+        val id = client().insertTestJedi(Jedi(name = "Yoda", age = 534))
+        client().delete("/mongo/jedi/$id").apply {
 
             status shouldBe NoContent
-            client.get("/mongo/jedi/$id").status shouldBe NotFound
+            client().get("/mongo/jedi/$id").status shouldBe NotFound
         }
     }
 })
 
 private fun HttpResponse.createdIdFromLocationHeader() = headers["Location"]!!.removePrefix("/mongo/jedi/")
 
-private suspend fun insertTestJedi(client: HttpClient, jedi: Jedi): String {
-    val s = client.post("/mongo/jedi") {
+private suspend fun HttpClient.insertTestJedi(jedi: Jedi) =
+    post("/mongo/jedi") {
         setBody(jedi)
         contentType(Json)
-    }.headers["Location"]!!
-    return s
-        .substring(12)
-}
+    }.headers["Location"]!!.substring(12)
 
-abstract class DbFunSpec(
-    body: DbFunSpec.() -> Unit = {},
-    databaseName: String = "test${Random.nextUInt()}"
-) : DslDrivenSpec(), FunSpecRootScope {
+abstract class AppFunSpec(
+    body: AppFunSpec.() -> Unit = {},
+    databaseName: String = "test${Random.nextUInt()}",
+    val database: MongoDatabase = MongoClient.create().getDatabase(databaseName)
+) : FunSpec() {
+    private lateinit var clientFactory: (HttpClientConfig<out HttpClientEngineConfig>.() -> Unit) -> HttpClient
+
     init {
-        afterProject {
-            runBlocking { database.drop() }
-        }
+        afterProject { runBlocking { database.drop() } }
         body()
     }
 
-    private val database = MongoClient.create().getDatabase(databaseName)
+    fun client(
+        config: HttpClientConfig<out HttpClientEngineConfig>.() -> Unit = {
+            install(ContentNegotiation) {
+                json(Json { prettyPrint = true })
+            }
+        }
+    ): HttpClient = clientFactory(config)
 
-    fun appTest(name: String, block: suspend ApplicationTestBuilder.(HttpClient) -> Unit) {
-        test(name) {
+    override fun test(name: String, test: suspend TestScope.() -> Unit) {
+        super.test(name) {
             testApplication {
                 application {
                     configureSerialization()
                     configureMongoDb(database)
                 }
-                val client = createClient {
-                    install(ContentNegotiation) {
-                        json(Json {
-                            prettyPrint = true
-                        })
+
+                clientFactory =
+                    { clientConfiguration ->
+                        createClient {
+                            clientConfiguration()
+                        }
                     }
-                }
-                block(client)
+                test()
             }
         }
     }
