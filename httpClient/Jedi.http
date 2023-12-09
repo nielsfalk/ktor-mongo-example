@@ -1,3 +1,32 @@
 ### GET request with a header
-GET http://0.0.0.0:8080/mongo/jedi
+GET {{baseUrl}}/mongo/jedi
+Accept: application/json
+
+### Send POST request with json body
+POST {{baseUrl}}/mongo/jedi
+Content-Type: application/json
+
+{
+  "name": "Ben",
+  "age": 60
+}
+
+### GET request with a header
+GET {{baseUrl}}/mongo/jedi/{{selectedId}}
+Accept: application/json
+
+### PUT request with a header
+PUT {{baseUrl}}/mongo/jedi/{{selectedId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "Ben",
+  "age": 61,
+  "version": 1
+}
+
+
+### DELETE request with a header
+DELETE {{baseUrl}}/mongo/jedi/{{selectedId}}
 Accept: application/json
