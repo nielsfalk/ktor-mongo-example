@@ -1,10 +1,7 @@
 package com.example.plugins
 
 import com.mongodb.client.model.Filters.eq
-import com.mongodb.client.model.Updates.set
 import com.mongodb.kotlin.client.coroutine.MongoClient
-import com.mongodb.kotlin.client.coroutine.MongoCollection
-import com.mongodb.kotlin.client.coroutine.MongoDatabase
 import io.ktor.http.HttpStatusCode.Companion.Created
 import io.ktor.http.HttpStatusCode.Companion.NoContent
 import io.ktor.http.HttpStatusCode.Companion.OK
@@ -13,31 +10,21 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.util.pipeline.*
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.*
-import kotlinx.serialization.json.Json
-import org.bson.BsonDocument
+import kotlinx.serialization.Contextual
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import org.bson.types.ObjectId
-import org.bson.codecs.kotlinx.defaultSerializersModule as bsonDefaultSerializersModule
 
-@OptIn(ExperimentalSerializationApi::class)
 fun Application.configureMongoDb() {
     val mongoClient = MongoClient.create()
     val database = mongoClient.getDatabase("test")
-    val collection = database.lazyGetCollection("jedi")
+    val collection = database.lazyGetCollection<JediEntity>("jedi")
     suspend fun PipelineContext<Unit, ApplicationCall>.findJediById(
         id: ObjectId = call.parameters["id"]
             ?.let { if (ObjectId.isValid(it)) ObjectId(it) else null }
             ?: throw IllegalArgumentException("Invalid ID")
-    ) =
-        collection.find(
-            eq("_id", id)
-        ).firstOrNull()
-
-    val json = Json { serializersModule = bsonDefaultSerializersModule }
+    ) = collection.findJediById(id)
 
     routing {
         get("/mongo/jedi") {
@@ -63,15 +50,13 @@ fun Application.configureMongoDb() {
         }
         put("/mongo/jedi/{id}") {
             findJediById()?.let { found ->
-                val update = call.receive<Jedi>()
-                collection.updateOne(eq("_id", found.id),
-                    BsonDocument.parse(json.encodeToString<Jedi>(update))
-                        .filterKeys { it != "_id" }
-                        .map { (key, value) -> set(key, value) }
+                collection.updateOne(
+                    found.id!!,
+                    call.receive<Jedi>().toEntity()
                 )
                 call.respond(
                     OK,
-                    findJediById(found.id!!)
+                    findJediById(found.id)
                         ?.toModel()
                         ?: throw Exception("Id not found")
                 )
@@ -116,18 +101,3 @@ private fun Jedi.toEntity(): JediEntity =
         name = name,
         age = age
     )
-
-fun MongoDatabase.lazyGetCollection(collectionName: String): MongoCollection<JediEntity> {
-    runBlocking {
-        if (listCollectionNames().filter { it == collectionName }.firstOrNull() == null) {
-            createCollection(collectionName)
-            getCollection<JediEntity>(collectionName).insertOne(
-                JediEntity(
-                    name = "Luke",
-                    age = 19
-                )
-            )
-        }
-    }
-    return getCollection<JediEntity>(collectionName)
-}
