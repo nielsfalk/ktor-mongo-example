@@ -15,14 +15,17 @@ import kotlinx.serialization.json.Json
 import org.bson.BsonDocument
 import org.bson.types.ObjectId
 
-inline fun <reified T : Any> MongoDatabase.lazyGetCollection(collectionName: String): MongoCollection<T> {
+inline fun <reified T : Any> MongoDatabase.lazyGetCollection(
+    collectionName: String,
+    noinline initializer: (suspend MongoCollection<T>.() -> Unit)? = null
+): MongoCollection<T> =
     runBlocking {
         if (listCollectionNames().filter { it == collectionName }.firstOrNull() == null) {
             createCollection(collectionName)
+            initializer?.invoke(getCollection<T>(collectionName))
         }
+        getCollection<T>(collectionName)
     }
-    return getCollection<T>(collectionName)
-}
 
 suspend fun <T : Any> MongoCollection<T>.findById(id: ObjectId) =
     find(eq("_id", id)).firstOrNull()
